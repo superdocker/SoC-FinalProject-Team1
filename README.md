@@ -58,3 +58,26 @@ chmod +x hello_world
 Explanation of codes is in each repo directory.  
 - No dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#no-dataflow-optimization
 - With dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#with-dataflow-optimization
+
+# Experimental results
+
+## Dataset
+- Simple dataset: 32x32 2D space, 40 randomly generated datas  
+- Point Pillars dataset: 320*280 2D space, 4551 pillars (datas)
+
+## Results
+
+### Two datasets with No dataflow optimization
+| Dataset      | Simple example | PointPillars data |
+|--------------|:--------------:|:-----------------:|
+| SW emulation |       7.225 ms |        830.828 ms |
+| HW emulation |       0.096 ms |          6.466 ms |
+| Run on F1    |       0.207 ms |          8.600 ms |
+
+### Simple dataset with two optimization methods
+| Optimization | Dataflow X | Dataflow O |
+|--------------|:----------:|:----------:|
+| SW emulation |   7.225 ms |  11.364 ms |
+| HW emulation |   0.096 ms |   0.078 ms |
+| Run on F1    |   0.207 ms |          - |
+
