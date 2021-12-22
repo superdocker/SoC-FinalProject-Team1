@@ -9,7 +9,7 @@
 
 ## Versions  
 - No dataflow optimization ```csr/csr_onboard_init/```  
-- With dataflow optimization ```csr/csr_onboard_init/```  
+- With dataflow optimization ```csr/csr_dataflow_rowloop/```  
 
 |           | No dataflow optimization | With dataflow optimization |
 |-----------|--------------------------|----------------------------|
@@ -52,3 +52,9 @@ cd YOUR_DIR
 chmod +x hello_world
 ./hello_world vadd.awsxclbin 
 ```
+
+# About codes
+
+Explanation of codes is in each repo directory.  
+No dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#no-dataflow-optimization
+With dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#with-dataflow-optimization
