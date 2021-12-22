@@ -181,4 +181,141 @@ write_rule_loop2: for (int j=0; j<3; j++){
 
 Write rule loop에서는 input index에 적힌 kernel vertical index와 input index를 보고, dilation loop에서 미리 번호가 매겨진 output index에 horizontal한 방향으로 kernel offset을 결정하여 Rule에 바로 써주게 됩니다.
 
+## With dataflow optimization  
 
+Codes are in ```csr_dataflow_rowloop/src```  
+
+```cpp
+void vadd(hls::vector<DTYPE,(ROW_SIZE+1)> *csr_row,
+          hls::vector<DTYPE,(NUM_FEATURE)> *csr_col,
+          hls::vector<DTYPE, 3> *out_Rule){
+...
+#pragma HLS DATAFLOW
+    hls::stream<hls::vector<DTYPE,(ROW_SIZE+1)>> CsrRow("CsrRowStream");
+    hls::stream<hls::vector<DTYPE,(ROW_SIZE+1)>> CsrRow_("CsrRow2Stream");
+    hls::stream<hls::vector<DTYPE,NUM_FEATURE>> CsrCol("CsrColStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> Candidates("CandidatesStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE>> MergedCol("MergedColStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE>> MergedCol_("MergedCol2Stream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> KIPairs("KIPiarsStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> KIPairs_("KIPiars2Stream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> KStream("KStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> IStream("IStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE*3>> OStream("OStream");
+    hls::stream<DTYPE> RuleWriteLength("RuleWriteLengthStream"); // kernel, input, output
+    hls::stream<DTYPE> OutNumFeaturePerRow("OutNumFeaturePerRowStream");
+    hls::stream<hls::vector<DTYPE,COL_SIZE>> OutCsrCol("OutCsrColStream");
+    readCsrData(CsrRow, CsrCol, csr_row, csr_col);
+...
+
+    /* Step 0. Prepare merger
+    Input: csr_row, csr_col
+    Output: Three candidatess
+    */
+    prepare_merge(Candidates, CsrRow_, CsrRow, CsrCol);
+
+    /* Step 1. Three column merger
+    Input: csr_row, csr_col
+    Output: Merged cols, Input-Kernel(vertical) pairs
+    */
+    merge(MergedCol, Candidates, KIPairs, CsrRow_);
+
+    /* Step 2. Row dilator
+    Input: Merged cols
+    Output: out_csr_row, out_csr_col
+    */
+    dilate(MergedCol_, KIPairs_, MergedCol, KIPairs, OutNumFeaturePerRow, OutCsrCol);
+
+    /* Step 3. Rule generator
+    Input: Input-Kernel(vertical) pairs, out_csr_row, out_csr_col
+    Output: Kernel-Input-Output pairs
+    */
+    write_rule(KStream, IStream, OStream, RuleWriteLength,
+               MergedCol_, KIPairs_, OutNumFeaturePerRow, OutCsrCol);
+
+    /* Step 4. Output module
+    Input: Kernel-Input-Output pairs
+    Output: Rule
+    */
+    generate_out(KStream, IStream, OStream, RuleWriteLength, out_Rule);
+}
+```
+Main 함수는 다음과 같이 5개의 step으로 나뉘어져 있습니다.  
+- Prepare merge
+- Merge three rows
+- Dilate columns in a row
+- Write Rule
+- Write back to host  
+
+이러한 모든 과정은 최소 단위의 Stream으로 이어지게 됩니다.   
+또한 각 함수들은 모두 Output row에 대한 loop로 이루어져 있습니다.  
+Prepare merge 과정은 Dataflow를 적용하지 않았을 때와 동일합니다.   
+
+```cpp
+for(int r=0; r<ROW_SIZE; r++){
+    // merged col in a row
+    hls::vector<DTYPE, COL_SIZE> merged_col;
+    // load candidates
+    hls::vector<DTYPE, COL_SIZE*3> entry = Candidates.read();
+    int merge_counter = 0;
+    hls::vector<DTYPE, COL_SIZE*3> input_index;
+    init_merge: for (int i=0; i<COL_SIZE; i++){
+        merged_col[i] = COL_SIZE; // initialize with dummy value
+        for (int j=0; j<3; j++){
+            input_index[j*COL_SIZE+i] = -1;
+        }
+    }
+    merge_loop: for (int i=0; i<COL_SIZE; i++){
+        ...
+        // If no more value in next index -> skip
+    } // end merge_loop
+    MergedCol.write(merged_col);
+    KIPairs.write(input_index);
+```
+
+Merge loop는 이전에 설명한 것과 동일하지만, Merged column과 Kernel-Input index pair를 Stream방식으로 받아서 넘겨주도록 합니다.  
+
+```cpp
+void dilate(hls::stream<hls::vector<DTYPE,COL_SIZE>> &MergedCol_,
+            hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &KIPairs_,
+            hls::stream<hls::vector<DTYPE,COL_SIZE>> &MergedCol,
+            hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &KIPairs,
+            hls::stream<DTYPE> &OutNumFeaturePerRow,
+            hls::stream<hls::vector<DTYPE,COL_SIZE>> &OutCsrCol){
+    for(int r=0; r<ROW_SIZE; r++){
+        int nnz = 0; // non zero value per row
+        // load merged col
+        hls::vector<DTYPE, COL_SIZE> merged_col = MergedCol.read();
+        hls::vector<DTYPE, COL_SIZE*3> ki_temp = KIPairs.read();
+        hls::vector<DTYPE, COL_SIZE> outcol_temp;
+        // initialize out_col_csr
+        for (int i=0; i<COL_SIZE; i++){
+            outcol_temp[i] = -1;
+        }
+        int outcol_cnt = 0;
+        KIPairs_.write(ki_temp);
+        MergedCol_.write(merged_col);
+        // initializae with first two value
+        int low = merged_col[0];
+        int high = merged_col[0];
+        int merged_col_counter = 0;
+        if (low!=COL_SIZE){ // no value
+            if (merged_col[1]==COL_SIZE) { // one value
+                ...
+            } else {
+                dilation_loop: for (merged_col_counter=1;
+                                    merged_col_counter < COL_SIZE-1;
+                                    merged_col_counter++){
+                    ...
+                    }
+                } // end each column index
+            } // end else
+        } // end dilation
+        OutCsrCol.write(outcol_temp);       
+        OutNumFeaturePerRow.write(nnz);
+    } // end row
+}
+```
+
+Dilate의 큰 변화의 경우에는, dilation은 기본적으로 겹치는 column index들을 고려하여 최종적인 output column index를 결정하는 역할을 합니다.  
+기존의 과정에서는 output column을 더 이상 만들 수 없으면 만들어진 데이터들을 다음 write rule stage로 넘어갈 수 있지만, Stream에서는 정해진 size를 미리 알려주는 것이 중요하므로 최대로 (dense한 경우)를 가정한 COL_SIZE만큼의 데이터에 유효한 값들을 써주고, 얼마만큼 읽어야 유효한지 수를 함께 보내줘야합니다.  
