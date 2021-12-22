@@ -319,3 +319,50 @@ void dilate(hls::stream<hls::vector<DTYPE,COL_SIZE>> &MergedCol_,
 
 Dilate의 큰 변화의 경우에는, dilation은 기본적으로 겹치는 column index들을 고려하여 최종적인 output column index를 결정하는 역할을 합니다.  
 기존의 과정에서는 output column을 더 이상 만들 수 없으면 만들어진 데이터들을 다음 write rule stage로 넘어갈 수 있지만, Stream에서는 정해진 size를 미리 알려주는 것이 중요하므로 최대로 (dense한 경우)를 가정한 COL_SIZE만큼의 데이터에 유효한 값들을 써주고, 얼마만큼 읽어야 유효한지 수를 함께 보내줘야합니다.  
+
+```cpp
+void write_rule(hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &KStream, // k,i,o
+                hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &IStream, // k,i,o
+                hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &OStream, // k,i,o
+                hls::stream<DTYPE> &RuleWriteLength,
+                hls::stream<hls::vector<DTYPE,COL_SIZE>> &MergedCol_,
+                hls::stream<hls::vector<DTYPE,COL_SIZE*3>> &KIPairs_,
+                hls::stream<DTYPE> &OutNumFeaturePerRow,
+                hls::stream<hls::vector<DTYPE,COL_SIZE>> &OutCsrCol){
+    int prevIdx = 0;
+    int currIdx = 0;
+    int nnz = 0;
+    hls::vector<DTYPE,3> Rule;
+
+    for(int r=0; r<ROW_SIZE; r++){
+        // for streaming
+        int write_num = 0;
+        hls::vector<DTYPE,COL_SIZE*3> k_temp;
+        hls::vector<DTYPE,COL_SIZE*3> i_temp;
+        hls::vector<DTYPE,COL_SIZE*3> o_temp;
+
+        nnz = OutNumFeaturePerRow.read();
+        hls::vector<DTYPE,COL_SIZE> out_csr_col = OutCsrCol.read();
+        currIdx = nnz+prevIdx;
+        hls::vector<DTYPE, COL_SIZE> merged_col = MergedCol_.read();
+        hls::vector<DTYPE, COL_SIZE*3> input_index = KIPairs_.read();
+        int outIdx;
+        write_rule_loop: for (int i=0; i<COL_SIZE; i++){
+            if (merged_col[i]!=COL_SIZE){
+                // write_rule
+            }
+        } // end one row
+        KStream.write(k_temp);
+        IStream.write(i_temp);
+        OStream.write(o_temp);
+        RuleWriteLength.write(write_num);
+        prevIdx = currIdx;
+    } // end whole row
+    // end signal
+}
+```
+
+Write rule에서는 기존에서는 큰 Rule을 통째로 buffer에 들고 있는 상황에서 바로 Kernel offset과 input, output offset을 결정하여 적어줄 수 있었으나, Stream 방식에서는 ```hls::vector``` type이 큰 값을 갖고 있을 수 없으므로 Kernel, Input, Output index를 각각 stream 방식으로 보내주는데, dense한 경우에 최대 COL_SIZE만큼 각각 mapping될 수 있으므로 COL_SIZE만큼씩 크기를 가진 stream으로 선언해줘야 합니다.   
+최종적으로 Write Rule 함수는 Kernel, Input, Output pair를 return해주게 되며, 여기서 유효한 mapping의 갯수는 Output Row마다 가변적이기 때문에 몇 개의 pair가 유효한지 알려주는 Stream 역시 필요하게 됩니다.  
+
+최종적으로 Kernel-Input-Output index pair를 유효한 갯수만큼 읽어서 최종적인 Rule에 적어주는 일을 하게 되면 Rule generation이 끝나게 됩니다.  
