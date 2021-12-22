@@ -56,5 +56,5 @@ chmod +x hello_world
 # About codes
 
 Explanation of codes is in each repo directory.  
-No dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#no-dataflow-optimization
-With dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#with-dataflow-optimization
+- No dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#no-dataflow-optimization
+- With dataflow optimization: https://github.com/superdocker/SoC-FinalProject-Team1/tree/main/csr#with-dataflow-optimization
