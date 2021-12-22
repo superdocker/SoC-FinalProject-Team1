@@ -20,7 +20,7 @@
 ## Commands  
 ```bash
 # Setup with codes in csr/csr_onboard_init/
-# Another codes, csr/csr_onboard_init/ is available
+# Another codes, csr/csr_dataflow_rowloop/ is available
 
 # In AWS instance
 cd $AWS_FPGA_REPO_DIR
