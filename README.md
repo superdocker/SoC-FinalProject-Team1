@@ -17,6 +17,7 @@
 | HW_EMU    | Available                | Available                  |
 | Run on F1 | Available                | Not Available              |
 
+## Commands  
 ```bash
 # Setup with codes in csr/csr_onboard_init/
 # Another codes, csr/csr_onboard_init/ is available
