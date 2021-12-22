@@ -1,0 +1,2 @@
+make run TARGET=sw_emu DEVICE=$AWS_PLATFORM all
+make TARGET=hw DEVICE=$AWS_PLATFORM all
